@@ -8,18 +8,24 @@ from mpl_toolkits.mplot3d import Axes3D
 
 
 class HandTracking():
-    def __init__(self, maxHands=2, detectionCon=0.2, trackCon=0.9):
+    def __init__(self, maxHands=2, detectionCon=0.2, trackCon=0.9, complexity=0):
         self.mp_hands = mp.solutions.hands
-        self.hands = self.mp_hands.Hands(static_image_mode=False,
-                                              max_num_hands= maxHands,           
-                                              min_detection_confidence=detectionCon,   
-                                              min_tracking_confidence=trackCon) 
+        self.hands = self.mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=maxHands,           
+            min_detection_confidence=detectionCon,   
+            min_tracking_confidence=trackCon,
+            model_complexity=complexity
+        )
         self.mp_draw = mp.solutions.drawing_utils
         self.mp_styles = mp.solutions.drawing_styles
         self.time1 = time.time()
         self.wrist = []
+        self.image_height = None
+        self.image_width = None
 
     def findHands(self, img):
+        self.image_height, self.image_width, _ = img.shape
         
         img.flags.writeable = False
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)

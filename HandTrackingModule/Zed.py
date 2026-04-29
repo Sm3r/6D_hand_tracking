@@ -24,7 +24,7 @@ class Zed():
         self.init_params = sl.InitParameters(input_t=self.input_type)
         self.init_params.camera_resolution = sl.RESOLUTION.HD720
         self.init_params.camera_fps = 30
-        self.init_params.depth_mode = sl.DEPTH_MODE.ULTRA
+        self.init_params.depth_mode = sl.DEPTH_MODE.NEURAL_PLUS
         self.init_params.coordinate_units = sl.UNIT.METER
         self.init_params.depth_minimum_distance = 0.3
         self.init_params.depth_maximum_distance = 40
@@ -41,13 +41,14 @@ class Zed():
 
         # Create and set RuntimeParameters after opening the camera
         self.runtime_parameters = sl.RuntimeParameters()
-        self.runtime_parameters.sensing_mode = sl.SENSING_MODE.FILL  # Use FILL sensing mode
+        # self.runtime_parameters.sensing_mode = sl.SENSING_MODE.FILL  # Use FILL sensing mode
         # Setting the depth confidence parameters
         self.runtime_parameters.confidence_threshold = depth_confidence
-        self.runtime_parameters.textureness_confidence_threshold = depth_confidence
+        # self.runtime_parameters.textureness_confidence_threshold = depth_confidence
 
         # Get Camera Calibration Parameters
-        self.camera_params = self.zed.get_camera_information().calibration_parameters.left_cam
+        # self.camera_params = self.zed.get_camera_information().calibration_parameters.left_cam
+        self.camera_params = self.zed.get_camera_information().camera_configuration.calibration_parameters.left_cam
         self.fx = self.camera_params.fx  # Focal length in pixels (x-axis)
         self.fy = self.camera_params.fy  # Focal length in pixels (y-axis)
         self.cx = self.camera_params.cx  # X-coordinate of the principal point
@@ -63,10 +64,17 @@ class Zed():
         self.confidence_map = sl.Mat()
 
     def print_information(self):
-        print("Resolution: {0}, {1}.".format(round(self.zed.get_camera_information().camera_resolution.width, 2), self.zed.get_camera_information().camera_resolution.height))
-        print("Camera FPS: {0}".format(self.zed.get_camera_information().camera_fps))
+        print("Resolution: {0}, {1}.".format(
+            self.zed.get_camera_information().camera_configuration.resolution.width,
+            self.zed.get_camera_information().camera_configuration.resolution.height
+        ))
+        #print("Camera FPS: {0}".format(self.zed.get_camera_information().camera_fps))
+        cam_info = self.zed.get_camera_information()
+        fps = cam_info.camera_configuration.fps
+
+        print("Camera FPS: {0}".format(fps))
         print("Depth mode: {0}.".format(self.init_params.depth_mode))
-        print("Sensing mode: {0}.".format(self.runtime_parameters.sensing_mode))
+        #print("Sensing mode: {0}.".format(self.runtime_parameters.sensing_mode))
         if self.svo_mode:
             print("Frame count: {0}.\n".format(self.zed.get_svo_number_of_frames())) 
 

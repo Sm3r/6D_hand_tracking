@@ -17,15 +17,21 @@ def main():
     else:
         print("Camera Mode: Live Streaming")
         filename = None
+    
+    # Create results directory if it doesn't exist
+    os.makedirs('results', exist_ok=True)
         
     # bring detector
-    detector = HandTracking()
+    detector = HandTracking(maxHands=2, detectionCon=0.1, trackCon=0.8, complexity=1)
     # bring zed
     cam = Zed(filename)
     
     # print camera information
     cam.print_information()
-    final_frame = cam.zed.get_svo_number_of_frames()
+    if filename:
+        final_frame = cam.zed.get_svo_number_of_frames()
+    else:
+        final_frame = float('inf')
     camera_params = cam.camera_params
     frame = 0
     lx, ly, lz, lyaw, lpitch, lroll = 0, 0, 0, 0, 0, 0
@@ -51,7 +57,8 @@ def main():
             data_left,data_right = detector.findpostion(depth_img, pcl,camera_params)
 
             cv2.imshow("Image", img)
-            cv2.waitKey(1)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
 
 
             # find the orientation of the palm
@@ -94,12 +101,21 @@ def main():
             RPITCH.append(rpitch)
             RROLL.append(rroll)
 
-            df = pd.DataFrame(name_dict)
-            csvname = 'results/'+ filename + '.csv'
-            df.to_csv('results/trial2.csv',index=False)
-
             # system out frame number without newline
-            print(" | Frame count: ",frame, "/",final_frame, end='\r')
+            if filename:
+                print(" | Frame count: ",frame, "/",final_frame, end='\r')
+            else:
+                print(" | Frame count: ",frame, end='\r')
+        else:
+            break
+    
+    # Save final results
+    df = pd.DataFrame(name_dict)
+    csvname = 'results/'+ filename + '.csv' if filename else 'results/output.csv'
+    df.to_csv(csvname, index=False)
+    print(f"\n\nResults saved to: {csvname}")
+    print(f"Total frames recorded: {frame}")
+    cv2.destroyAllWindows()
 
 
 
@@ -111,18 +127,18 @@ if __name__ == "__main__":
     key = ' '
     name_dict = {
         'Frame': F,
-        'left X': RX,
-        'left Y': RY,
-        'left Z': RZ,
-        'left Yaw': RYAW,
-        'left Pitch': RPITCH,
-        'left Roll': RROLL,
-        'right X': LX,
-        'right Y': LY,
-        'right Z': LZ,
-        'right Yaw': LYAW,
-        'right Pitch': LPITCH,
-        'right Roll': LROLL,     
+        'left X': LX,
+        'left Y': LY,
+        'left Z': LZ,
+        'left Yaw': LYAW,
+        'left Pitch': LPITCH,
+        'left Roll': LROLL,
+        'right X': RX,
+        'right Y': RY,
+        'right Z': RZ,
+        'right Yaw': RYAW,
+        'right Pitch': RPITCH,
+        'right Roll': RROLL,     
 
     }
 
