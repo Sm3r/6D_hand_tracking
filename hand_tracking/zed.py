@@ -1,7 +1,4 @@
-import sys
-import mediapipe as mp
 import pyzed.sl as sl
-import numpy as np
 
 class Zed():
     def __init__(self,filename=None,depth_confidence=100):

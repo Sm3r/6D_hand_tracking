@@ -2,9 +2,6 @@ import cv2
 import time
 import mediapipe as mp
 import numpy as np
-import sys
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 
 class HandTracking():
@@ -120,7 +117,12 @@ class HandTracking():
 
         # Compute the normal vector to the plane defined by the landmarks
         normal = np.cross(v1, v2)
-        normal /= np.linalg.norm(normal)
+        norm = np.linalg.norm(normal)
+        # Guard against degenerate cases where the normal is zero
+        if norm < 1e-8:
+            zero_array = np.zeros((3,))
+            return zero_array
+        normal = normal / norm
 
         # Compute the yaw, pitch, and roll angles based on the orientation of the normal vector
         yaw = np.arctan2(normal[1], normal[0])
@@ -130,7 +132,6 @@ class HandTracking():
         self.orientation = np.array([yaw, pitch, roll])
 
         # Convert angles to degrees and return
-        
         return np.degrees(yaw), np.degrees(pitch), np.degrees(roll)
 
     def calculate_centroid(self,hand_landmarks_3d):
@@ -153,7 +154,7 @@ class HandTracking():
     def findNormalizedPosition(self,img):
         left_data = []
         right_data = []
-        w, h, _ = img.shape
+        h, w, _ = img.shape
 
         if self.results.multi_hand_landmarks:
             
@@ -162,7 +163,7 @@ class HandTracking():
                 for id, landmark in enumerate(landmarks.landmark):
                     # Find the pixel coordinates of the wrist
                     if id == 0:
-                        X, Y = int(landmark.x * h), int(landmark.y * w)
+                        X, Y = int(landmark.x * w), int(landmark.y * h)
                         # circle X, Y
                         cv2.circle(img, (X, Y), 10, (0, 0, 255), -1)
          
