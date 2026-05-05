@@ -2,7 +2,6 @@ import cv2
 import sys,os
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 import mediapipe as mp
-import numpy as np
 from HandTrackingModule.HandTracking import HandTracking
 from HandTrackingModule.Zed import Zed
 import pyzed.sl as sl
@@ -36,6 +35,7 @@ def main():
     frame = 0
     lx, ly, lz, lyaw, lpitch, lroll = 0, 0, 0, 0, 0, 0
     rx, ry, rz, ryaw, rpitch, rroll = 0, 0, 0, 0, 0, 0
+    first_print = True
 
 
     while frame <= final_frame:
@@ -101,17 +101,25 @@ def main():
             RPITCH.append(rpitch)
             RROLL.append(rroll)
 
-            # system out frame number without newline
-            if filename:
-                print(" | Frame count: ",frame, "/",final_frame, end='\r')
-            else:
-                print(" | Frame count: ",frame, end='\r')
+            # Print detection and frame count on two fixed lines and refresh in-place
+            detection = getattr(detector, 'detection_str', '')
+            frame_line = f"Frame count: {frame}" + (f" / {final_frame}" if filename else "")
+            if not first_print:
+                # Move cursor up two lines to overwrite previous detection and frame lines
+                print("\x1b[2A", end='')
+            print(detection.ljust(80), flush=True)
+            print(frame_line.ljust(80), flush=True)
+            first_print = False
         else:
             break
     
     # Save final results
     df = pd.DataFrame(name_dict)
-    csvname = 'results/'+ filename + '.csv' if filename else 'results/output.csv'
+    if filename:
+        base = os.path.splitext(os.path.basename(filename))[0]
+        csvname = os.path.join('results', base + '.csv')
+    else:
+        csvname = os.path.join('results', 'output.csv')
     df.to_csv(csvname, index=False)
     print(f"\n\nResults saved to: {csvname}")
     print(f"Total frames recorded: {frame}")

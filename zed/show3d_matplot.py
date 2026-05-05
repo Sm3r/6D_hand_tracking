@@ -1,6 +1,5 @@
 import os, sys
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-import mediapipe as mp
 import cv2
 import pyzed.sl as sl
 import numpy as np

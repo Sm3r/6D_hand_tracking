@@ -1,10 +1,7 @@
 import os, sys
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-import mediapipe as mp
 import cv2
 import pyzed.sl as sl
-import numpy as np
-import matplotlib.pyplot as plt
 from HandTrackingModule.HandTracking import HandTracking
 from HandTrackingModule.Zed import Zed
 from HandTrackingModule.Vis3D import Vis3D

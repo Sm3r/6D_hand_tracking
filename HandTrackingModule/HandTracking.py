@@ -23,6 +23,7 @@ class HandTracking():
         self.wrist = []
         self.image_height = None
         self.image_width = None
+        self.detection_str = ""
 
     def findHands(self, img):
         self.image_height, self.image_width, _ = img.shape
@@ -60,36 +61,38 @@ class HandTracking():
         left_data = []
         right_data = []
         if self.results.multi_hand_landmarks:
-             for landmarks in self.results.multi_hand_landmarks:
+            for landmarks in self.results.multi_hand_landmarks:
                 handedness = self.results.multi_handedness[self.results.multi_hand_landmarks.index(landmarks)].classification[0].index
+
+                # First, get the wrist landmark (index 0) and its image pixel coordinates
+                wrist_landmark = landmarks.landmark[0]
+                wrist_landmark_coordinate = [wrist_landmark.x, wrist_landmark.y, wrist_landmark.z]
+                X, Y = int(wrist_landmark.x * w), int(wrist_landmark.y * h)
+
+                # draw circle on wrist
+                cv2.circle(img, (X, Y), 10, (0, 0, 255), -1)
+
+                # Try to get wrist 3D point from point cloud; if unavailable, skip this hand
+                try:
+                    err, point_cloud_value = pcl.get_value(X, Y)
+                    wrist_position = [point_cloud_value[0], point_cloud_value[1], point_cloud_value[2]]
+                except Exception:
+                    # cannot get wrist depth, skip computing this hand's landmarks
+                    continue
+
+                # Compute 3D positions for all landmarks using wrist as the reference
                 for id, landmark in enumerate(landmarks.landmark):
-                    
-                    # Find the pixel coordinates of the wrist
-                    if id == 0:
-                        wrist_landmark_coordinate = [landmark.x, landmark.y, landmark.z]
-                        X, Y = int(landmark.x * w), int(landmark.y * h)
-
-                        # circle cx, cy
-                        cv2.circle(img, (X, Y), 10, (0, 0, 255), -1)
-                        # Use ZED point cloud to estimate 3D position of wrist
-                        try:
-                            err, point_cloud_value = pcl.get_value(X, Y)
-                            wrist_position = [point_cloud_value[0], point_cloud_value[1], point_cloud_value[2]]
-                        except:
-                            continue
-
-                    x_3d = wrist_position[0] + (landmark.x*w - wrist_landmark_coordinate[0]*w - cx) * wrist_position[2] / fx
-                    y_3d = wrist_position[1] + (landmark.y*h - wrist_landmark_coordinate[1]*w - cy) * wrist_position[2] / fy
+                    x_3d = wrist_position[0] + (landmark.x * w - wrist_landmark_coordinate[0] * w - cx) * wrist_position[2] / fx
+                    y_3d = wrist_position[1] + (landmark.y * h - wrist_landmark_coordinate[1] * h - cy) * wrist_position[2] / fy
                     z_3d = wrist_position[2] + (landmark.z - wrist_landmark_coordinate[2]) * wrist_position[2]
                     hand_landmarks_3d = [x_3d, y_3d, z_3d]
-                    # append the 3D position of each 3D landmark
+
+                    # append the 3D position of each landmark to the correct hand list
                     if handedness == 1:
                         left_data.append(hand_landmarks_3d)
-                        # put text left hand
                         cv2.putText(img, "Left", (X, Y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                     elif handedness == 0:
-                        right_data.append(hand_landmarks_3d) 
-                        # put text right hand
+                        right_data.append(hand_landmarks_3d)
                         cv2.putText(img, "Right", (X, Y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                
    
@@ -196,21 +199,15 @@ class HandTracking():
     
 
     def stdout_hand_detection(self, left_data, right_data):
+        # Update the current detection string instead of printing directly.
         if left_data.shape == (21,3) and right_data.shape == (21,3):
-            sys.stdout.write("\rLeft and Right hands all 21 landmarks detected")
-            sys.stdout.flush()
-        
+            self.detection_str = "Left and Right hands all 21 landmarks detected"
         elif left_data.shape == (21,3) and right_data.shape != (21,3):
-            sys.stdout.write("\rLeft hand all 21 landmarks detected")
-            sys.stdout.flush()
-        
+            self.detection_str = "Left hand all 21 landmarks detected"
         elif left_data.shape != (21,3) and right_data.shape == (21,3):
-            sys.stdout.write("\rRight hand all 21 landmarks detected")
-            sys.stdout.flush()
-            
+            self.detection_str = "Right hand all 21 landmarks detected"
         else:
-            sys.stdout.write("\rNo hand landmarks detected")
-            sys.stdout.flush()
+            self.detection_str = "No hand landmarks detected"
     
 
     def plot(self,ax,plt,data,xlim=(-0.5, 0.1),ylim=(-0.5, 0.1),zlim=(0.2, 1.0)):
