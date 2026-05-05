@@ -1,2 +1,6 @@
 .DS_Store
 HandTrackingModule/__pycache__/
+results/*.csv
+takes/*.svo*
+.venv/
+venv/
