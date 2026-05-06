@@ -10,8 +10,12 @@ def main():
     else:
         print("Camera Mode: Live Streaming")
         filename = None
+        timestamped = True
 
-    capture_to_csv(filename=filename, window_title='Image', timestamped=False)
+    if 'timestamped' not in locals():
+        timestamped = False
+
+    capture_to_csv(filename=filename, window_title='Image', timestamped=timestamped)
 
 
 if __name__ == "__main__":
