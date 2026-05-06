@@ -5,7 +5,7 @@ import numpy as np
 
 
 class HandTracking():
-    def __init__(self, maxHands=2, detectionCon=0.2, trackCon=0.9, complexity=0):
+    def __init__(self, maxHands=2, detectionCon=0.2, trackCon=0.8, complexity=1, draw=True):
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
@@ -21,6 +21,7 @@ class HandTracking():
         self.image_height = None
         self.image_width = None
         self.detection_str = ""
+        self.draw = draw
 
     def findHands(self, img):
         self.image_height, self.image_width, _ = img.shape
@@ -34,7 +35,7 @@ class HandTracking():
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
 
-        if self.results.multi_hand_landmarks:
+        if self.draw and self.results.multi_hand_landmarks:
             for hand_landmarks in self.results.multi_hand_landmarks:
      
                 self.mp_draw.draw_landmarks(
@@ -67,7 +68,8 @@ class HandTracking():
                 X, Y = int(wrist_landmark.x * w), int(wrist_landmark.y * h)
 
                 # draw circle on wrist
-                cv2.circle(img, (X, Y), 10, (0, 0, 255), -1)
+                if self.draw:
+                    cv2.circle(img, (X, Y), 10, (0, 0, 255), -1)
 
                 # Try to get wrist 3D point from point cloud; if unavailable, skip this hand
                 try:
@@ -87,10 +89,12 @@ class HandTracking():
                     # append the 3D position of each landmark to the correct hand list
                     if handedness == 1:
                         left_data.append(hand_landmarks_3d)
-                        cv2.putText(img, "Left", (X, Y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                        if self.draw:
+                            cv2.putText(img, "Left", (X, Y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                     elif handedness == 0:
                         right_data.append(hand_landmarks_3d)
-                        cv2.putText(img, "Right", (X, Y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                        if self.draw:
+                            cv2.putText(img, "Right", (X, Y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                
    
         # Convert the data to a numpy array
@@ -165,17 +169,20 @@ class HandTracking():
                     if id == 0:
                         X, Y = int(landmark.x * w), int(landmark.y * h)
                         # circle X, Y
-                        cv2.circle(img, (X, Y), 10, (0, 0, 255), -1)
+                        if self.draw:
+                            cv2.circle(img, (X, Y), 10, (0, 0, 255), -1)
          
                     hand_landmarks_3d = [landmark.x, landmark.y, landmark.z]
                     # append the 3D position of each 3D landmark 
                     if handedness == 1:
                         left_data.append(hand_landmarks_3d)
-                        cv2.putText(img, "Left", (X, Y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                        if self.draw:
+                            cv2.putText(img, "Left", (X, Y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                     elif handedness == 0:
                         right_data.append(hand_landmarks_3d)
                         # put text left hand
-                        cv2.putText(img, "Right", (X, Y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                        if self.draw:
+                            cv2.putText(img, "Right", (X, Y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
         left_data = np.array(left_data)
         right_data = np.array(right_data)
@@ -183,21 +190,29 @@ class HandTracking():
 
         return left_data, right_data
     
-    def displayFPS(self, img):
+    def get_fps(self):
         # Set the time for this frame to the current time.
         self.time2 = time.time()
+
         # Check if the difference between the previous and this frame time > 0 to avoid division by zero.
         if (self.time2 - self.time1) > 0:
-        
+
             # Calculate the number of frames per second.
-            frames_per_second = 1.0 / (self.time2 - self.time1)
-            
-            # Write the calculated number of frames per second on the frame. 
-            cv2.putText(img, 'FPS: {}'.format(int(frames_per_second)), (10, 30),cv2.FONT_HERSHEY_PLAIN, 2, (0, 255, 0), 3)
+            fps = 1.0 / (self.time2 - self.time1)
             self.time1 = self.time2
+            return fps
+
+        return None
+    
+    def displayFPS(self, img):
+        fps = self.get_fps()
+        
+        # Only draw if a valid FPS was calculated
+        if fps is not None:
+            # Write the calculated number of frames per second on the frame
+            cv2.putText(img, f'FPS: {int(fps)}', (10, 30), cv2.FONT_HERSHEY_PLAIN, 2, (0, 255, 0), 3)
         
         return img
-    
 
     def stdout_hand_detection(self, left_data, right_data):
         # Update the current detection string instead of printing directly.
