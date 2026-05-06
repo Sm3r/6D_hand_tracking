@@ -19,9 +19,10 @@ class Zed():
         # Initialize the ZED camera
         self.zed = sl.Camera()
         self.init_params = sl.InitParameters(input_t=self.input_type)
-        self.init_params.camera_resolution = sl.RESOLUTION.HD720
+        self.init_params.camera_resolution = sl.RESOLUTION.VGA
         self.init_params.camera_fps = 30
-        self.init_params.depth_mode = sl.DEPTH_MODE.NEURAL_PLUS
+
+        self.init_params.depth_mode = sl.DEPTH_MODE.PERFORMANCE
         self.init_params.coordinate_units = sl.UNIT.METER
         self.init_params.depth_minimum_distance = 0.3
         self.init_params.depth_maximum_distance = 40
@@ -31,10 +32,14 @@ class Zed():
         # Open the camera
         err = self.zed.open(self.init_params)
         if err != sl.ERROR_CODE.SUCCESS :
-            print(repr(err))
+            msg = repr(err)
+            print(msg)
             print("If using SVO, check if the path is correct")
-            self.zed.close()
-            exit(1)
+            try:
+                self.zed.close()
+            except Exception:
+                pass
+            raise RuntimeError(f"ZED open failed: {msg}")
 
         # Create and set RuntimeParameters after opening the camera
         self.runtime_parameters = sl.RuntimeParameters()

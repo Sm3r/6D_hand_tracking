@@ -9,24 +9,23 @@ from .zed import Zed
 import pyzed.sl as sl
 
 
-def _initialize_name_dict():
+def _initialize_name_dict(num_cams=1):
     name_dict = {}
     name_dict['Frame'] = []
+    
 
-    # Palm centroid + orientation fields for left and right
-    basic_keys = [
-        'left X', 'left Y', 'left Z', 'left Yaw', 'left Pitch', 'left Roll',
-        'right X', 'right Y', 'right Z', 'right Yaw', 'right Pitch', 'right Roll',
-    ]
-    for k in basic_keys:
-        name_dict[k] = []
+    # For each camera, add palm centroid/orientation and flattened landmark columns
+    for cam_idx in range(num_cams):
+        prefix = f"cam{cam_idx}"
+        for hand in ['left', 'right']:
+            for field in ['X', 'Y', 'Z', 'Yaw', 'Pitch', 'Roll']:
+                name_dict[f"{prefix} {hand} {field}"] = []
 
-    # Flattened landmark columns: 'left 0 X', 'left 0 Y', 'left 0 Z', ...
-    for hand in ['left', 'right']:
-        for i in range(21):
-            for axis in ['X', 'Y', 'Z']:
-                name = f"{hand} {i} {axis}"
-                name_dict[name] = []
+        for hand in ['left', 'right']:
+            for i in range(21):
+                for axis in ['X', 'Y', 'Z']:
+                    name = f"{prefix} {hand} {i} {axis}"
+                    name_dict[name] = []
 
     return name_dict
 
@@ -42,115 +41,183 @@ def capture_to_csv(filename=None, output_csv=None, window_title='Image', timesta
 
     os.makedirs('results', exist_ok=True)
 
-    detector = HandTracking(maxHands=2, detectionCon=0.1, trackCon=0.8, complexity=1)
-    cam = Zed(filename)
+    detector = HandTracking(maxHands=1, detectionCon=0.2, trackCon=0.8, complexity=0)
 
-    cam.print_information()
+    # If using SVO file, keep existing single-stream behavior
     if filename:
+        cam = Zed(filename)
+        cam.print_information()
         try:
             final_frame = cam.zed.get_svo_number_of_frames()
         except Exception:
             final_frame = float('inf')
+        camera_params = cam.camera_params
+        zed_list = [cam]
+        live_mode = False
     else:
+        # Live mode: detect number of connected ZED cameras and use up to 2
+        live_mode = True
+        zed_list = []
+        # Try opening camera indices 0 and 1; stop after successfully opening two
+        for cam_index in (0, 1):
+            try:
+                cam_instance = Zed(None)
+                # Zed class currently doesn't accept index; assume device selection is handled by SDK defaults
+                zed_list.append(cam_instance)
+                if len(zed_list) >= 2:
+                    break
+            except Exception:
+                # failed to open a camera at this index; continue
+                continue
+
+        if len(zed_list) == 0:
+            raise RuntimeError('No ZED cameras available for live capture')
+
+        # Use camera params from each opened camera
+        camera_params_list = [z.camera_params for z in zed_list]
+
+        # Live streams are open indefinitely unless SVO provided
         final_frame = float('inf')
 
-    camera_params = cam.camera_params
+    # initialize columns for all opened cameras (use row-buffering)
+    columns = list(_initialize_name_dict(len(zed_list)).keys())
+    rows = []
 
-    name_dict = _initialize_name_dict()
+    # ensure camera params list is available for per-camera processing
+    camera_params_list = [z.camera_params for z in zed_list]
+
+    # create per-camera detectors so FPS and detection are tracked per stream
+    if live_mode:
+        detectors = [HandTracking(maxHands=1, detectionCon=0.2, trackCon=0.8, complexity=0) for _ in zed_list]
+    else:
+        detectors = [detector]
 
     frame = 0
     lx = ly = lz = lyaw = lpitch = lroll = 0
     rx = ry = rz = ryaw = rpitch = rroll = 0
     first_print = True
 
+    # Loop: grab from each opened camera and produce one row per frame containing all camera columns
+    num_cams = len(zed_list)
     while frame <= final_frame:
-        err = cam.zed.grab(cam.runtime_parameters)
-        if err == sl.ERROR_CODE.SUCCESS:
-            frame += 1
-            cam.get_image()
-            img = cam.img
-            depth_img = cam.depth_img
+        any_success = False
+        per_cam = [None] * num_cams
 
-            pcl = cam.point_cloud
+        # grab/process each camera once per frame
+        for idx, active_cam in enumerate(zed_list):
+            err = active_cam.zed.grab(active_cam.runtime_parameters)
+            if err != sl.ERROR_CODE.SUCCESS:
+                continue
+            any_success = True
+            active_cam.get_image()
+            img = active_cam.img
+            depth_img = active_cam.depth_img
+            pcl = active_cam.point_cloud
 
-            img = detector.findHands(img)
-            data_left, data_right = detector.findpostion(depth_img, pcl, camera_params)
+            img_processed = detectors[idx].findHands(img)
+            camera_params = camera_params_list[idx]
+            data_left, data_right = detectors[idx].findpostion(depth_img, pcl, camera_params)
 
-            cv2.imshow(window_title, img)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+            left_orient = detectors[idx].calculate_orientation(data_left)
+            left_centroid = detectors[idx].calculate_centroid(data_left)
+            right_orient = detectors[idx].calculate_orientation(data_right)
+            right_centroid = detectors[idx].calculate_centroid(data_right)
 
-            left_orientaton = detector.calculate_orientation(data_left)
-            left_centroid = detector.calculate_centroid(data_left)
+            per_cam[idx] = {
+                'img': img_processed,
+                'left_data': data_left,
+                'right_data': data_right,
+                'left_centroid': left_centroid,
+                'left_orient': left_orient,
+                'right_centroid': right_centroid,
+                'right_orient': right_orient,
+            }
 
-            right_orientaton = detector.calculate_orientation(data_right)
-            right_centroid = detector.calculate_centroid(data_right)
+            # overlay FPS for this camera stream
+            img_processed = detectors[idx].displayFPS(img_processed)
+            cv2.imshow(f"{window_title}_{idx}", img_processed)
 
-            if isinstance(data_left, np.ndarray) and data_left.shape == (21, 3):
-                lx, ly, lz = left_centroid
-                lyaw, lpitch, lroll = left_orientaton
-
-            if isinstance(data_right, np.ndarray) and data_right.shape == (21, 3):
-                rx, ry, rz = right_centroid
-                ryaw, rpitch, rroll = right_orientaton
-
-            # append basic palm 6D info
-            name_dict['Frame'].append(frame)
-            name_dict['left X'].append(lx)
-            name_dict['left Y'].append(ly)
-            name_dict['left Z'].append(lz)
-            name_dict['left Yaw'].append(lyaw)
-            name_dict['left Pitch'].append(lpitch)
-            name_dict['left Roll'].append(lroll)
-            name_dict['right X'].append(rx)
-            name_dict['right Y'].append(ry)
-            name_dict['right Z'].append(rz)
-            name_dict['right Yaw'].append(ryaw)
-            name_dict['right Pitch'].append(rpitch)
-            name_dict['right Roll'].append(rroll)
-
-            # Convert landmark lists to numpy arrays once to avoid repeated conversions
-            if isinstance(data_left, (list, tuple)):
-                dl = np.array(data_left)
-            else:
-                dl = data_left
-
-            if isinstance(data_right, (list, tuple)):
-                dr = np.array(data_right)
-            else:
-                dr = data_right
-
-            # Append flattened 3D landmarks for left and right hands.
-            for i in range(21):
-                # left
-                for axis_idx, axis in enumerate(['X', 'Y', 'Z']):
-                    col = f"left {i} {axis}"
-                    if isinstance(dl, np.ndarray) and dl.shape == (21, 3):
-                        name_dict[col].append(float(dl[i, axis_idx]))
-                    else:
-                        name_dict[col].append(np.nan)
-
-                # right
-                for axis_idx, axis in enumerate(['X', 'Y', 'Z']):
-                    col = f"right {i} {axis}"
-                    if isinstance(dr, np.ndarray) and dr.shape == (21, 3):
-                        name_dict[col].append(float(dr[i, axis_idx]))
-                    else:
-                        name_dict[col].append(np.nan)
-
-            # Print detection and frame count on two fixed lines and refresh in-place
-            detection = getattr(detector, 'detection_str', '')
-            frame_line = f"Frame count: {frame}" + (f" / {final_frame}" if filename else "")
-            if not first_print:
-                print("\x1b[2A", end='')
-            print(detection.ljust(80), flush=True)
-            print(frame_line.ljust(80), flush=True)
-            first_print = False
-        else:
+        if not any_success:
             break
 
-    # Save final results
-    df = pd.DataFrame(name_dict)
+        # advance frame once and append a single combined row
+        frame += 1
+        row = {}
+        row['Frame'] = frame
+
+        for idx in range(num_cams):
+            cam_prefix = f"cam{idx}"
+            entry = per_cam[idx]
+
+            # palm centroid/orientation (only if full 21 landmarks were found)
+            if entry and isinstance(entry['left_data'], np.ndarray) and entry['left_data'].shape == (21, 3):
+                lx, ly, lz = entry['left_centroid']
+                lyaw, lpitch, lroll = entry['left_orient']
+            else:
+                lx = ly = lz = lyaw = lpitch = lroll = np.nan
+
+            if entry and isinstance(entry['right_data'], np.ndarray) and entry['right_data'].shape == (21, 3):
+                rx, ry, rz = entry['right_centroid']
+                ryaw, rpitch, rroll = entry['right_orient']
+            else:
+                rx = ry = rz = ryaw = rpitch = rroll = np.nan
+
+            row[f"{cam_prefix} left X"] = lx
+            row[f"{cam_prefix} left Y"] = ly
+            row[f"{cam_prefix} left Z"] = lz
+            row[f"{cam_prefix} left Yaw"] = lyaw
+            row[f"{cam_prefix} left Pitch"] = lpitch
+            row[f"{cam_prefix} left Roll"] = lroll
+
+            row[f"{cam_prefix} right X"] = rx
+            row[f"{cam_prefix} right Y"] = ry
+            row[f"{cam_prefix} right Z"] = rz
+            row[f"{cam_prefix} right Yaw"] = ryaw
+            row[f"{cam_prefix} right Pitch"] = rpitch
+            row[f"{cam_prefix} right Roll"] = rroll
+
+            # flattened landmarks
+            dl = entry['left_data'] if (entry is not None) else None
+            dr = entry['right_data'] if (entry is not None) else None
+
+            if isinstance(dl, (list, tuple)):
+                dl = np.array(dl)
+            if isinstance(dr, (list, tuple)):
+                dr = np.array(dr)
+
+            for i in range(21):
+                for axis_idx, axis in enumerate(['X', 'Y', 'Z']):
+                    col_l = f"{cam_prefix} left {i} {axis}"
+                    if isinstance(dl, np.ndarray) and dl.shape == (21, 3):
+                        row[col_l] = float(dl[i, axis_idx])
+                    else:
+                        row[col_l] = np.nan
+
+                for axis_idx, axis in enumerate(['X', 'Y', 'Z']):
+                    col_r = f"{cam_prefix} right {i} {axis}"
+                    if isinstance(dr, np.ndarray) and dr.shape == (21, 3):
+                        row[col_r] = float(dr[i, axis_idx])
+                    else:
+                        row[col_r] = np.nan
+
+        rows.append(row)
+
+        # Print detection and frame count on two fixed lines and refresh in-place
+        # combine detector strings for all detectors
+        detection = ' | '.join(getattr(d, 'detection_str', '') for d in detectors)
+        frame_line = f"Frame count: {frame}" + (f" / {final_frame}" if filename else "")
+        if not first_print:
+            print("\x1b[2A", end='')
+        print(detection.ljust(80), flush=True)
+        print(frame_line.ljust(80), flush=True)
+        first_print = False
+
+        # single key check for all displayed windows
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    # Save final results (build DataFrame from row buffer)
+    df = pd.DataFrame(rows, columns=columns)
     if output_csv is None:
         if filename:
             base = os.path.splitext(os.path.basename(filename))[0]
